@@ -1,0 +1,114 @@
+x-superset-image: &superset-image apache/superset:latest-dev
+x-superset-depends-on: &superset-depends-on
+  - superset_db
+  - superset_redis
+x-superset-volumes: &superset-volumes
+  # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
+  - ./docker:/app/docker
+  - superset_home:/app/superset_home
+x-superset-env-vars: &common-variables
+  SPS_DATABASE_DB: ${SPS_DATABASE_DB} 
+  SPS_DATABASE_HOST: ${SPS_DATABASE_HOST} 
+  SPS_DATABASE_PASSWORD: ${SPS_DATABASE_PASSWORD} 
+  SPS_DATABASE_USER: ${SPS_DATABASE_USER}
+  SPS_DATABASE_PORT: ${SPS_DATABASE_PORT}
+  SPS_DATABASE_DIALECT: ${SPS_DATABASE_DIALECT}
+  SPS_POSTGRES_DB: ${SPS_POSTGRES_DB}
+  SPS_POSTGRES_USER: ${SPS_POSTGRES_USER}
+  SPS_POSTGRES_PASSWORD: ${SPS_POSTGRES_PASSWORD}
+  SPS_PYTHONPATH: ${SPS_PYTHONPATH}
+  SPS_REDIS_HOST: ${SPS_REDIS_HOST}
+  SPS_REDIS_PORT: ${SPS_REDIS_PORT}
+  FLASK_ENV: ${FLASK_ENV}
+  SUPERSET_ENV: ${SUPERSET_ENV}
+  SUPERSET_LOAD_EXAMPLES: ${SUPERSET_LOAD_EXAMPLES}
+  CYPRESS_CONFIG: ${CYPRESS_CONFIG}
+  SUPERSET_PORT: ${SUPERSET_PORT}
+ 
+version: "3.7"
+services:
+  superset_redis:
+    image: redis:latest
+    container_name: superset_cache
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    networks:
+      - ml_platform
+
+  superset_db:
+    environment:
+      <<: *common-variables
+    image: postgres:10.5
+    container_name: superset_db
+    restart: unless-stopped
+    volumes:
+      - db_home:/var/lib/postgresql/data
+    networks:
+      - ml_platform
+  
+  superset:
+    environment:
+      <<: *common-variables
+    image: *superset-image
+    container_name: superset_app
+    command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]
+    user: "root"
+    restart: unless-stopped
+    ports:
+      - 8088:8088
+    depends_on: *superset-depends-on
+    volumes: *superset-volumes
+    networks:
+      - ml_platform
+
+  superset-init:
+    image: *superset-image
+    container_name: superset_init
+    command: ["/app/docker/docker-init.sh"]
+    environment:
+      <<: *common-variables
+    depends_on: *superset-depends-on
+    user: "root"
+    volumes: *superset-volumes
+    networks:
+        - ml_platform
+
+  superset-worker:
+    image: *superset-image
+    container_name: superset_worker
+    command: ["/app/docker/docker-bootstrap.sh", "worker"]
+    environment:
+      <<: *common-variables
+    restart: unless-stopped
+    depends_on: *superset-depends-on
+    user: "root"
+    volumes: *superset-volumes
+    networks:
+        - ml_platform
+  
+  superset-worker-beat:
+    image: *superset-image
+    container_name: superset_worker_beat
+    command: ["/app/docker/docker-bootstrap.sh", "beat"]
+    environment:
+      <<: *common-variables
+    restart: unless-stopped
+    depends_on: *superset-depends-on
+    user: "root"
+    volumes: *superset-volumes
+    networks:
+        - ml_platform
+  
+
+volumes:
+  superset_home:
+    external: false
+  db_home:
+    external: false
+  redis:
+    external: false
+
+networks:
+    ml_platform:
+      external: true
